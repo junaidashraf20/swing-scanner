@@ -1,0 +1,55 @@
+# ============================================================
+#  Swing Scanner — GitHub Actions Daily Workflow
+#  Runs every weekday at 4:15 PM IST (10:45 UTC)
+#  Completely free. No PC needed. No paid hosting.
+# ============================================================
+
+name: Daily Swing Scan
+
+on:
+  schedule:
+    - cron: '45 10 * * 1-5'   # Mon–Fri, 10:45 UTC = 4:15 PM IST
+
+  # Allows you to trigger manually from GitHub website anytime
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+
+      # Step 1 — Get your code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2 — Set up Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Step 3 — Install dependencies (cached for speed)
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas numpy requests jugaad-data
+
+      # Step 4 — Run the scanner
+      # Telegram credentials come from GitHub Secrets (safe, not hardcoded)
+      - name: Run Swing Scanner
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python scanner.py --force
+
+      # Step 5 — Upload scan log as artifact (view results anytime)
+      - name: Upload scan log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-log-${{ github.run_id }}
+          path: scanner.log
+          retention-days: 30
