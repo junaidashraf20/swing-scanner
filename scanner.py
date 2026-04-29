@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from stock_universe import get_universe
 from strategies import run_all_strategies
 from alerts import send_scan_results
-from data_fetcher import fetch_ohlcv
+from data_fetcher import fetch_ohlcv, passes_liquidity_filter
 from market_calendar import assert_market_open
 import config as cfg
 
@@ -48,9 +48,14 @@ def _build_cfg() -> dict:
 
 
 def scan_stock(symbol: str, strategy_cfg: dict) -> dict | None:
-    """Fetch + validate + scan one stock. Returns result dict or None."""
+    """Fetch + validate + liquidity check + scan one stock."""
     df = fetch_ohlcv(symbol, cfg.LOOKBACK_DAYS)
     if df is None:
+        return None
+    # Liquidity + market cap proxy filter
+    liq_ok, liq_reason = passes_liquidity_filter(df, symbol)
+    if not liq_ok:
+        logger.debug(f"{symbol} skipped: {liq_reason}")
         return None
     signals = run_all_strategies(df, strategy_cfg)
     if signals:
