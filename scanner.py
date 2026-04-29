@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from stock_universe import get_universe
 from strategies import run_all_strategies
-from alerts import send_scan_results
+from alerts import send_scan_results, send_scan_results_multi
 from data_fetcher import fetch_ohlcv, passes_liquidity_filter
 from market_calendar import assert_market_open
 import config as cfg
@@ -80,7 +80,7 @@ def run_scan(send_alert: bool = True, force: bool = False) -> list[dict]:
             if send_alert:
                 send_scan_results(
                     cfg.TELEGRAM_BOT_TOKEN,
-                    cfg.TELEGRAM_CHAT_ID,
+                    cfg.TELEGRAM_CHAT_IDS[0] if cfg.TELEGRAM_CHAT_IDS else "",
                     date_str,
                     [],
                     skip_message="🗓 No scan today — NSE holiday or weekend.",
@@ -127,7 +127,7 @@ def run_scan(send_alert: bool = True, force: bool = False) -> list[dict]:
     # ── Send Telegram alert ────────────────────────────────────
     if send_alert:
         logger.info("Sending Telegram alert...")
-        send_scan_results(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_ID, date_str, results)
+        send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_IDS, date_str, results)
 
     return results
 
