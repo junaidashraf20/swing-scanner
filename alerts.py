@@ -153,3 +153,34 @@ def send_scan_results(bot_token, chat_id, date_str, results, skip_message=None):
         send_telegram(bot_token, chat_id, msg)
         if i < len(messages) - 1:
             time.sleep(1)
+
+
+def send_scan_results_multi(bot_token, chat_ids, date_str, results, skip_message=None):
+    """
+    Sends alerts to ALL chat IDs — personal + groups.
+    Skips empty/invalid chat IDs automatically.
+    """
+    # Filter out placeholder/empty IDs
+    valid_ids = [
+        cid for cid in chat_ids
+        if cid and cid not in (
+            "YOUR_PERSONAL_CHAT_ID",
+            "YOUR_GROUP_1_ID",
+            "YOUR_GROUP_2_ID",
+            "PASTE_YOUR_CHAT_ID_HERE",
+        )
+    ]
+
+    if not valid_ids:
+        logger.error("No valid chat IDs found — check config.py or GitHub Secrets")
+        return
+
+    logger.info(f"Sending to {len(valid_ids)} recipient(s)...")
+
+    for chat_id in valid_ids:
+        try:
+            send_scan_results(bot_token, chat_id, date_str, results, skip_message)
+            logger.info(f"  Sent to {chat_id} ✅")
+            time.sleep(0.5)  # Small delay between recipients
+        except Exception as e:
+            logger.error(f"  Failed to send to {chat_id}: {e}")
