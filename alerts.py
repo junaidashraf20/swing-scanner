@@ -1,5 +1,5 @@
 """
-alerts.py — Clean simple Telegram alerts for breakout scanner
+alerts.py — Compact single-message Telegram alerts
 """
 
 import urllib.request
@@ -9,6 +9,7 @@ import time
 
 logger = logging.getLogger(__name__)
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+MAX_CHARS = 4000  # Telegram limit is 4096 — leave buffer
 
 
 def send_telegram(bot_token, chat_id, message):
@@ -33,92 +34,122 @@ def send_telegram(bot_token, chat_id, message):
         return False
 
 
-def format_signal_line(sig):
-    """One clean line per signal."""
-    stype    = sig.get("type", "")
-    tf       = sig.get("timeframe", "D")
-    broke    = sig.get("broke_above")
-    current  = sig.get("current")
-    vol      = sig.get("vol_ratio")
-    tf_tag   = "〔W〕" if tf == "W" else "〔D〕"
+def signal_line(sig):
+    """Ultra compact single line per signal."""
+    stype = sig.get("type", "")
+    tf    = "W" if sig.get("timeframe") == "W" else "D"
+    broke = sig.get("broke_above")
+    vol   = sig.get("vol_ratio")
 
     if stype == "52_WEEK_HIGH":
-        return f"  🏆 {tf_tag} 52-Week High  |  Broke ₹{broke}  |  Vol {vol}x"
-
+        return f"🏆[{tf}] 52W High ₹{broke} vol {vol}x"
     elif stype == "RESISTANCE":
-        touches = sig.get("touches", "")
-        return f"  🔓 {tf_tag} Resistance Break  |  ₹{broke} ({touches} touches)  |  Vol {vol}x"
-
+        t = sig.get("touches", "")
+        return f"🔓[{tf}] Resistance ₹{broke} ({t}T) vol {vol}x"
     elif stype == "CONSOLIDATION":
-        rng  = sig.get("range_pct")
-        bars = sig.get("range_candles")
-        return f"  📦 {tf_tag} Consolidation Break  |  ₹{broke} ({rng}% range, {bars} candles)  |  Vol {vol}x"
-
-    return f"  💥 {tf_tag} Breakout  |  ₹{broke}  |  Vol {vol}x"
+        r = sig.get("range_pct")
+        return f"📦[{tf}] Consolidation ₹{broke} ({r}%) vol {vol}x"
+    return f"💥[{tf}] Breakout ₹{broke} vol {vol}x"
 
 
-def format_alert_message(date_str, results):
+def build_message(date_str, results):
+    """
+    Builds the most compact possible message.
+    Weekly setups first, then daily.
+    One line per stock per signal.
+    """
     if not results:
         return (
-            f"📊 *Swing Scanner — {date_str}*\n\n"
-            "No breakout setups found today.\n"
-            "Stay patient. 🙏"
+            f"📊 *{date_str}*\n"
+            "No breakout setups today. Stay patient."
         )
 
-    # Separate weekly and daily signals
-    weekly = [(r, s) for r in results for s in r["signals"] if s.get("weekly_flag")]
-    daily  = [(r, s) for r in results for s in r["signals"] if not s.get("weekly_flag")]
+    weekly_lines = []
+    daily_lines  = []
 
-    lines = [f"🚨 *Breakout Alerts — {date_str}*"]
-    lines.append(f"_{len(results)} stocks found_\n")
+    for item in results:
+        sym  = item["symbol"].replace(".NS", "")
+        for sig in item["signals"]:
+            line = f"*{sym}* — {signal_line(sig)}"
+            if sig.get("weekly_flag"):
+                weekly_lines.append(line)
+            else:
+                daily_lines.append(line)
 
-    # Weekly setups first — higher priority
-    if weekly:
-        lines.append("⭐ *WEEKLY SETUPS — wait for weekly close:*")
-        seen = set()
-        for r, s in weekly:
-            sym = r["symbol"].replace(".NS", "")
-            key = (sym, s.get("type"), s.get("timeframe"))
-            if key in seen: continue
-            seen.add(key)
-            lines.append(f"\n*{sym}*")
-            lines.append(format_signal_line(s))
-            lines.append(f"  📍 Now: ₹{s.get('current')}")
+    parts = [f"🚨 *Breakout Alerts — {date_str}*"]
+    parts.append(f"_{len(results)} stocks | {len(weekly_lines)+len(daily_lines)} signals_\n")
 
-    # Daily setups
-    if daily:
-        lines.append("\n📋 *DAILY SETUPS — can enter on close:*")
-        seen = set()
-        for r, s in daily:
-            sym = r["symbol"].replace(".NS", "")
-            key = (sym, s.get("type"), s.get("timeframe"))
-            if key in seen: continue
-            seen.add(key)
-            lines.append(f"\n*{sym}*")
-            lines.append(format_signal_line(s))
-            lines.append(f"  📍 Now: ₹{s.get('current')}")
+    if weekly_lines:
+        parts.append("⭐ *Weekly — wait for weekly close*")
+        parts.extend(weekly_lines)
 
-    lines.append("\n─────────────────")
-    lines.append("⚡ Verify before entering. Trade safe.")
-    lines.append("🤖 Swing Scanner")
-    return "\n".join(lines)
+    if daily_lines:
+        if weekly_lines:
+            parts.append("")
+        parts.append("📋 *Daily setups*")
+        parts.extend(daily_lines)
+
+    parts.append("\n─────────────────")
+    parts.append("⚡ Verify before entering.")
+    parts.append("🤖 Swing Scanner")
+
+    return "\n".join(parts)
+
+
+def split_into_messages(date_str, results):
+    """
+    Tries to fit everything in 1 message.
+    Only splits if truly exceeds Telegram's 4096 char limit.
+    """
+    full_msg = build_message(date_str, results)
+
+    if len(full_msg) <= MAX_CHARS:
+        return [full_msg]  # Single message — ideal
+
+    # Split by stocks only if necessary
+    messages = []
+    batch = []
+    total = len(results)
+
+    for i, item in enumerate(results):
+        batch.append(item)
+        test_msg = build_message(
+            f"{date_str} ({len(messages)+1})",
+            batch
+        )
+        if len(test_msg) > MAX_CHARS:
+            # Send previous batch, start new one
+            if len(batch) > 1:
+                messages.append(build_message(
+                    f"{date_str} (Part {len(messages)+1})",
+                    batch[:-1]
+                ))
+                batch = [item]
+            else:
+                messages.append(test_msg[:MAX_CHARS])
+                batch = []
+
+    if batch:
+        part = f" (Part {len(messages)+1})" if messages else ""
+        messages.append(build_message(f"{date_str}{part}", batch))
+
+    return messages
 
 
 def send_scan_results(bot_token, chat_id, date_str, results, skip_message=None):
     if skip_message:
         send_telegram(bot_token, chat_id,
-                      f"📅 *Swing Scanner — {date_str}*\n\n{skip_message}")
+                      f"📅 *{date_str}*\n\n{skip_message}")
         return
 
-    BATCH = 15
     if not results:
-        send_telegram(bot_token, chat_id, format_alert_message(date_str, []))
+        send_telegram(bot_token, chat_id, build_message(date_str, []))
         return
 
-    for i in range(0, len(results), BATCH):
-        batch = results[i: i + BATCH]
-        part  = f"(Part {i // BATCH + 1})" if len(results) > BATCH else ""
-        msg   = format_alert_message(f"{date_str} {part}", batch)
+    messages = split_into_messages(date_str, results)
+    logger.info(f"Sending {len(messages)} Telegram message(s) for {len(results)} stocks")
+
+    for i, msg in enumerate(messages):
         send_telegram(bot_token, chat_id, msg)
-        if i + BATCH < len(results):
+        if i < len(messages) - 1:
             time.sleep(1)
