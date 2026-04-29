@@ -67,8 +67,8 @@ def validate_ohlcv(df: pd.DataFrame, symbol: str = "") -> tuple[bool, str]:
 
     # Minimum liquidity filter
     avg_vol = df["Volume"].tail(20).mean()
-    if avg_vol < 50000:
-        return False, f"Illiquid: avg vol {avg_vol:.0f} < 50,000"
+    if avg_vol < 500000:
+        return False, f"Illiquid: avg vol {avg_vol:.0f} < 500,000"
 
     if len(df) < 35:
         return False, f"Too few rows after cleaning: {len(df)}"
@@ -196,3 +196,36 @@ def fetch_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame | None:
         logger.debug(f"{symbol}: jugaad also invalid ({reason})")
 
     return None
+
+
+def passes_liquidity_filter(df: pd.DataFrame, symbol: str = "") -> tuple[bool, str]:
+    """
+    Enhanced liquidity + market cap proxy filter.
+    
+    Filters:
+    1. Average daily volume > 5,00,000 shares (liquid stocks)
+    2. Average daily turnover > ₹5 Crore (price × volume) — proxy for market cap > ₹10,000 Cr
+    3. Stock price > ₹50 (avoids penny stocks)
+    """
+    if df is None or df.empty or len(df) < 20:
+        return False, "Insufficient data"
+
+    last20       = df.tail(20)
+    avg_volume   = float(last20["Volume"].mean())
+    avg_price    = float(last20["Close"].mean())
+    avg_turnover = avg_volume * avg_price  # daily turnover in ₹
+
+    # Filter 1: minimum 5 lakh shares daily volume
+    if avg_volume < 500000:
+        return False, f"Low volume: {avg_volume/1e5:.1f}L avg (need 5L+)"
+
+    # Filter 2: minimum ₹5 Crore daily turnover (market cap proxy)
+    if avg_turnover < 5_00_00_000:  # 5 Crore = 5,00,00,000
+        return False, f"Low turnover: ₹{avg_turnover/1e7:.1f}Cr avg (need ₹5Cr+)"
+
+    # Filter 3: minimum stock price ₹50
+    current_price = float(df["Close"].iloc[-1])
+    if current_price < 50:
+        return False, f"Price too low: ₹{current_price:.0f} (need ₹50+)"
+
+    return True, "OK"
