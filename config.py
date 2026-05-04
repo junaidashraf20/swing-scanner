@@ -19,6 +19,7 @@ TELEGRAM_CHAT_IDS = [
     os.environ.get("TELEGRAM_CHAT_ID_1", "YOUR_PERSONAL_CHAT_ID"),
     os.environ.get("TELEGRAM_CHAT_ID_2", "YOUR_GROUP_1_ID"),
     os.environ.get("TELEGRAM_CHAT_ID_3", "YOUR_GROUP_2_ID"),
+    os.environ.get("TELEGRAM_CHAT_ID_4", "YOUR_GROUP_3_ID"),
     # Add more as needed
 ]
 
