@@ -2,7 +2,7 @@ name: Daily Swing Scan
 
 on:
   schedule:
-    - cron: '45 10 * * 1-5'
+    - cron: '30 12 * * 1-5'   # Mon–Fri, 12:30 UTC = 6:00 PM IST
   workflow_dispatch:
 
 jobs:
