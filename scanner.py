@@ -15,7 +15,8 @@ from zoneinfo import ZoneInfo
 
 from stock_universe import get_universe
 from strategies import run_all_strategies
-from alerts import send_scan_results, send_scan_results_multi
+from alerts import send_scan_results, send_scan_results_multi, send_early_rally_alerts
+from early_rally import run_early_rally_scan
 from data_fetcher import fetch_ohlcv, passes_liquidity_filter
 from market_calendar import assert_market_open
 import config as cfg
@@ -52,14 +53,18 @@ def scan_stock(symbol: str, strategy_cfg: dict) -> dict | None:
     df = fetch_ohlcv(symbol, cfg.LOOKBACK_DAYS)
     if df is None:
         return None
-    # Liquidity + market cap proxy filter
     liq_ok, liq_reason = passes_liquidity_filter(df, symbol)
     if not liq_ok:
         logger.debug(f"{symbol} skipped: {liq_reason}")
         return None
-    signals = run_all_strategies(df, strategy_cfg)
-    if signals:
-        return {"symbol": symbol, "signals": signals}
+    signals       = run_all_strategies(df, strategy_cfg)
+    early_signals = run_early_rally_scan(df)
+    if signals or early_signals:
+        return {
+            "symbol":        symbol,
+            "signals":       signals,
+            "early_signals": early_signals,
+        }
     return None
 
 
@@ -124,10 +129,28 @@ def run_scan(send_alert: bool = True, force: bool = False) -> list[dict]:
     else:
         logger.info("No setups found today.")
 
-    # ── Send Telegram alert ────────────────────────────────────
+    # ── Separate early rally from regular results ─────────────
+    early_results   = [
+        {"symbol": r["symbol"], "signals": r.get("early_signals", [])}
+        for r in results if r.get("early_signals")
+    ]
+    regular_results = [
+        {"symbol": r["symbol"], "signals": r.get("signals", [])}
+        for r in results if r.get("signals")
+    ]
+
+    if early_results:
+        logger.info(f"Early rally setups: {len(early_results)} stocks")
+        for r in early_results:
+            logger.info(f"  🚀 {r['symbol'].replace('.NS','')} — VCP breakout")
+
+    # ── Send Telegram alerts ───────────────────────────────────
     if send_alert:
-        logger.info("Sending Telegram alert...")
-        send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_IDS, date_str, results)
+        logger.info("Sending regular breakout alert...")
+        send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_IDS, date_str, regular_results)
+        if early_results:
+            logger.info("Sending Early Rally alert...")
+            send_early_rally_alerts(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_IDS, date_str, early_results)
 
     return results
 
