@@ -1,19 +1,17 @@
 """
 strategies.py — OPTIMIZED BREAKOUT ONLY
 ─────────────────────────────────────────
-Filters tightened for quality over quantity:
-  • Volume >= 1.5x median (was 1x)
-  • Consolidation max range 10% (was 15%)
-  • Resistance min 2 touches (unchanged)
-  • Weekly signals ONLY fire on Friday (or last trading day of week)
-  • Both Daily + Weekly timeframes
-  • Bullish only
+Key filter added:
+  • Base proximity filter — recent 20-day low must be within 20% of
+    breakout level. Filters stocks already extended from base.
+    Keeps fresh breakouts (NAVA, FORTIS style).
+    Removes extended moves (LALPATHLAB, MCX style).
 """
 
 import numpy as np
 import pandas as pd
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -28,7 +26,6 @@ def median_volume(df, period=20):
     return float(df["Volume"].iloc[-(period + 1):-1].median())
 
 def volume_above_median(df, period=20, multiplier=1.5):
-    """Volume must be >= multiplier × median. Default 1.5x for quality."""
     med = median_volume(df, period)
     today_vol = float(df["Volume"].iloc[-1])
     if med <= 0:
@@ -40,7 +37,6 @@ def is_bullish_close(candle):
     return float(candle["Close"]) > float(candle["Open"])
 
 def resample_weekly(df):
-    """Convert daily OHLCV to weekly candles."""
     weekly = df.resample("W").agg({
         "Open":   "first",
         "High":   "max",
@@ -51,38 +47,62 @@ def resample_weekly(df):
     return weekly
 
 def is_weekly_close_day() -> bool:
-    """
-    Returns True only if today is Friday (or Thursday if Friday is a holiday).
-    Weekly signals should only fire on the last trading day of the week.
-    """
     from market_calendar import NSE_HOLIDAYS
     today = datetime.now(IST).date()
-
-    # If today is Friday and not a holiday → weekly close day
     if today.weekday() == 4 and today not in NSE_HOLIDAYS:
         return True
-
-    # If today is Thursday and Friday is a holiday → Thursday is weekly close
-    from datetime import timedelta
     friday = today + timedelta(days=(4 - today.weekday()) % 7)
     if today.weekday() == 3 and friday in NSE_HOLIDAYS:
         return True
-
     return False
 
 
 # ════════════════════════════════════════════════════════════════
-#  RESISTANCE ZONE DETECTION — Strength based
+#  BASE PROXIMITY FILTER  ← NEW KEY FILTER
+# ════════════════════════════════════════════════════════════════
+
+def is_fresh_breakout(df, breakout_level: float,
+                       lookback: int = 20,
+                       max_extension: float = 0.20) -> tuple[bool, float]:
+    """
+    Checks if the stock is breaking out from a FRESH BASE
+    and has NOT already run up too much.
+
+    Logic:
+      recent_low  = lowest low in last `lookback` candles (excluding today)
+      extension   = (breakout_level - recent_low) / recent_low
+
+    If extension > max_extension → stock already ran too much → SKIP
+    If extension <= max_extension → stock is breaking from base → KEEP
+
+    Examples:
+      NAVA:         base ~700, breakout 727  → 3.9%  ✅ fresh
+      FORTIS:       base ~860, breakout 951  → 10.6% ✅ fresh
+      TATA CONSUMER:base ~1150, breakout 1244→ 8.1%  ✅ fresh
+      LALPATHLAB:   base ~1300, breakout 1598→ 22.9% ❌ extended
+      MCX/Lauruslabs: similar large extensions ❌ extended
+    """
+    if len(df) < lookback + 1:
+        return True, 0.0  # Not enough data — allow through
+
+    recent_low = float(df["Low"].iloc[-(lookback + 1):-1].min())
+
+    if recent_low <= 0:
+        return True, 0.0
+
+    extension = (breakout_level - recent_low) / recent_low
+    is_fresh  = extension <= max_extension
+
+    return is_fresh, round(extension * 100, 1)
+
+
+# ════════════════════════════════════════════════════════════════
+#  RESISTANCE ZONE DETECTION
 # ════════════════════════════════════════════════════════════════
 
 def find_resistance_zones(df, window=5, zone_threshold=0.025):
-    """
-    Strength score = (touches × 2) + (avg rejection %)
-    Returns zones sorted strongest first.
-    """
     n = len(df)
     raw_highs = []
-
     for i in range(window, n - window):
         local_max = df["High"].iloc[i - window: i + window + 1].max()
         if float(df["High"].iloc[i]) == local_max:
@@ -93,10 +113,8 @@ def find_resistance_zones(df, window=5, zone_threshold=0.025):
                 "bar":       i,
                 "rejection": rejection_pct,
             })
-
     if not raw_highs:
         return []
-
     raw_highs.sort(key=lambda x: x["price"])
     clusters = [[raw_highs[0]]]
     for h in raw_highs[1:]:
@@ -105,7 +123,6 @@ def find_resistance_zones(df, window=5, zone_threshold=0.025):
             clusters[-1].append(h)
         else:
             clusters.append([h])
-
     zones = []
     for cluster in clusters:
         avg_price     = float(np.mean([c["price"] for c in cluster]))
@@ -117,7 +134,6 @@ def find_resistance_zones(df, window=5, zone_threshold=0.025):
             "touches":  touches,
             "strength": round(strength, 2),
         })
-
     zones.sort(key=lambda x: x["strength"], reverse=True)
     return zones
 
@@ -145,6 +161,12 @@ def detect_52week_breakout(df, timeframe="D"):
     if not vol_ok:
         return None
 
+    # Base proximity check
+    fresh, extension = is_fresh_breakout(df, year_high)
+    if not fresh:
+        logger.debug(f"52W breakout skipped — already extended {extension}% from base")
+        return None
+
     label = "52-Week High Breakout 🏆" if timeframe == "D" else "52-Week High Breakout 🏆⭐"
     return {
         "strategy":    "BREAKOUT",
@@ -154,6 +176,7 @@ def detect_52week_breakout(df, timeframe="D"):
         "broke_above": round(year_high, 2),
         "current":     round(today_close, 2),
         "vol_ratio":   vol_ratio,
+        "extension":   extension,
         "weekly_flag": timeframe == "W",
     }
 
@@ -189,8 +212,13 @@ def detect_resistance_breakout(df, timeframe="D",
         if zone["strength"] < min_strength:
             continue
         if prev_close <= zone["price"] < today_close:
+            # Base proximity check
+            fresh, extension = is_fresh_breakout(df, zone["price"])
+            if not fresh:
+                logger.debug(f"Resistance breakout skipped — extended {extension}% from base")
+                continue
             if best is None or zone["strength"] > best["strength"]:
-                best = zone
+                best = {**zone, "extension": extension}
 
     if best is None:
         return None
@@ -206,6 +234,7 @@ def detect_resistance_breakout(df, timeframe="D",
         "touches":     best["touches"],
         "strength":    best["strength"],
         "vol_ratio":   vol_ratio,
+        "extension":   best["extension"],
         "weekly_flag": timeframe == "W",
     }
 
@@ -217,12 +246,7 @@ def detect_resistance_breakout(df, timeframe="D",
 def detect_consolidation_breakout(df, timeframe="D",
                                    lookback=30,
                                    max_range_pct=0.10):
-    """
-    Tightened to 10% max range (was 15%) for quality setups.
-    Like the grey zones in your Tata Steel chart — very tight bases.
-    """
     lb = lookback if timeframe == "D" else max(12, lookback // 4)
-
     if len(df) < lb + 2:
         return None
 
@@ -246,6 +270,9 @@ def detect_consolidation_breakout(df, timeframe="D",
     if not vol_ok:
         return None
 
+    # For consolidation — base IS the consolidation so no extension check needed
+    # The consolidation itself ensures stock was in a base
+
     tf_label = "Weekly ⭐" if timeframe == "W" else "Daily"
     return {
         "strategy":      "BREAKOUT",
@@ -266,10 +293,6 @@ def detect_consolidation_breakout(df, timeframe="D",
 # ════════════════════════════════════════════════════════════════
 
 def run_all_strategies(df, cfg):
-    """
-    Runs all 3 breakout types.
-    Weekly scans ONLY run on Friday (or last trading day of week).
-    """
     if df is None or len(df) < 35:
         return []
 
@@ -277,11 +300,11 @@ def run_all_strategies(df, cfg):
     mt = cfg.get("SR_MIN_TOUCHES", 2)
     zt = cfg.get("SR_ZONE_THRESHOLD", 0.025)
     lb = cfg.get("BREAKOUT_LOOKBACK", 30)
-    mr = cfg.get("BREAKOUT_MAX_RANGE", 0.10)  # tightened to 10%
+    mr = cfg.get("BREAKOUT_MAX_RANGE", 0.10)
 
     signals = []
 
-    # ── DAILY SCANS — runs every day ──────────────────────────
+    # ── DAILY ─────────────────────────────────────────────────
     try:
         s = detect_52week_breakout(df, "D")
         if s: signals.append(s)
@@ -300,7 +323,7 @@ def run_all_strategies(df, cfg):
     except Exception as e:
         logger.debug(f"Consolidation daily: {e}")
 
-    # ── WEEKLY SCANS — only on Friday (weekly close day) ──────
+    # ── WEEKLY — only on Friday ───────────────────────────────
     if len(df) >= 60 and is_weekly_close_day():
         try:
             wdf = resample_weekly(df)
@@ -310,13 +333,11 @@ def run_all_strategies(df, cfg):
                     if s: signals.append(s)
                 except Exception as e:
                     logger.debug(f"52W weekly: {e}")
-
                 try:
                     s = detect_resistance_breakout(wdf, "W", sw, mt, 4.0, zt)
                     if s: signals.append(s)
                 except Exception as e:
                     logger.debug(f"Resistance weekly: {e}")
-
                 try:
                     s = detect_consolidation_breakout(wdf, "W", 12, mr)
                     if s: signals.append(s)
