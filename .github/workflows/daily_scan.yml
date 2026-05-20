@@ -26,11 +26,10 @@ jobs:
 
       - name: Run Swing Scanner
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID_1: ${{ secrets.TELEGRAM_CHAT_ID_1 }}
-          TELEGRAM_CHAT_ID_2: ${{ secrets.TELEGRAM_CHAT_ID_2 }}
-          TELEGRAM_CHAT_ID_3: ${{ secrets.TELEGRAM_CHAT_ID_3 }}
-          TELEGRAM_CHAT_ID_4: ${{ secrets.TELEGRAM_CHAT_ID_4 }}
+          TELEGRAM_BOT_TOKEN:          ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_PERSONAL:      ${{ secrets.TELEGRAM_CHAT_PERSONAL }}
+          TELEGRAM_CHAT_INTERMEDIATE:  ${{ secrets.TELEGRAM_CHAT_INTERMEDIATE }}
+          TELEGRAM_CHAT_BEGINNER:      ${{ secrets.TELEGRAM_CHAT_BEGINNER }}
         run: |
           python scanner.py
 
