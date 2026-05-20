@@ -4,41 +4,37 @@
 
 import os
 
-# --- Telegram Alert Settings ---
-# Add ALL your chat IDs / group IDs here
-# Personal chat ID: just numbers e.g. "987654321"
-# Group chat ID: starts with -100 e.g. "-1001234567890"
+# --- Telegram Bot ---
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
 
-TELEGRAM_BOT_TOKEN = os.environ.get(
-    "TELEGRAM_BOT_TOKEN",
-    "PASTE_YOUR_BOT_TOKEN_HERE"
-)
+# --- Chat IDs (descriptive names so you always know which is which) ---
+# Each gets a DIFFERENT message format automatically:
+#   Personal     → full technical detail (for you)
+#   Intermediate → medium detail + SL zone
+#   Beginner     → simple: Buy above X, SL Y, Target Z
 
-# Add multiple recipients here — personal + groups
-TELEGRAM_CHAT_IDS = [
-    os.environ.get("TELEGRAM_CHAT_ID_1", "YOUR_PERSONAL_CHAT_ID"),
-    os.environ.get("TELEGRAM_CHAT_ID_2", "YOUR_GROUP_1_ID"),
-    os.environ.get("TELEGRAM_CHAT_ID_3", "YOUR_GROUP_2_ID"),
-    os.environ.get("TELEGRAM_CHAT_ID_4", "YOUR_GROUP_3_ID"),
-    # Add more as needed
-]
+TELEGRAM_CHATS = {
+    "personal":     os.environ.get("TELEGRAM_CHAT_PERSONAL",     ""),
+    "intermediate": os.environ.get("TELEGRAM_CHAT_INTERMEDIATE", ""),
+    "beginner":     os.environ.get("TELEGRAM_CHAT_BEGINNER",     ""),
+}
 
 # --- Scan Schedule ---
-SCAN_HOUR   = 16
-SCAN_MINUTE = 15
+SCAN_HOUR   = 18
+SCAN_MINUTE = 0
 
 # --- Universe ---
 UNIVERSE      = "nifty500"
 CUSTOM_STOCKS = []
 
 # --- Strategy Parameters ---
-SR_SWING_WINDOW    = 5
-SR_ZONE_THRESHOLD  = 0.025
-SR_MIN_TOUCHES     = 2
-SR_PROXIMITY       = 0.02
-SMC_SWING_WINDOW   = 5
-BREAKOUT_LOOKBACK  = 30
-BREAKOUT_MAX_RANGE = 0.10
+SR_SWING_WINDOW      = 5
+SR_ZONE_THRESHOLD    = 0.025
+SR_MIN_TOUCHES       = 2
+SR_PROXIMITY         = 0.02
+SMC_SWING_WINDOW     = 5
+BREAKOUT_LOOKBACK    = 30
+BREAKOUT_MAX_RANGE   = 0.10
 BREAKOUT_VOLUME_MULT = 1.5
 
 # --- Data ---
