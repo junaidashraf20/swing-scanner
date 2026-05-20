@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from stock_universe import get_universe
 from strategies import run_all_strategies
-from alerts import send_all_formats, send_early_rally_alerts
+from alerts import send_scan_results_multi, send_early_rally_alerts
 from early_rally import run_early_rally_scan
 from data_fetcher import fetch_ohlcv, passes_liquidity_filter
 from market_calendar import assert_market_open
@@ -76,7 +76,7 @@ def run_scan(send_alert=True, force=False):
         if not assert_market_open():
             logger.info("Scan aborted — market not open today.")
             if send_alert:
-                send_all_formats(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, [],
+                send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, [],
                                  skip_message="🗓 No scan today — NSE holiday or weekend.")
             return []
 
@@ -128,7 +128,7 @@ def run_scan(send_alert=True, force=False):
 
     if send_alert:
         logger.info("Sending alerts...")
-        send_all_formats(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, regular_results)
+        send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, regular_results)
         if early_results:
             all_ids = [
                 cfg.TELEGRAM_CHAT_PERSONAL,
