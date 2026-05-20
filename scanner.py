@@ -1,10 +1,5 @@
 """
-scanner.py — Main scan engine (production grade)
-─────────────────────────────────────────────────
-Critical fixes applied:
-  ✅ FIX 1 — yfinance fallback to jugaad_data (via data_fetcher.py)
-  ✅ FIX 2 — NSE holiday + weekend check (via market_calendar.py)
-  ✅ FIX 3 — Data validation before running strategies (via data_fetcher.py)
+scanner.py — Main scan engine with multi-format alerts
 """
 
 import logging
@@ -15,13 +10,12 @@ from zoneinfo import ZoneInfo
 
 from stock_universe import get_universe
 from strategies import run_all_strategies
-from alerts import send_scan_results, send_scan_results_multi, send_early_rally_alerts
+from alerts import send_all_formats, send_early_rally_alerts
 from early_rally import run_early_rally_scan
 from data_fetcher import fetch_ohlcv, passes_liquidity_filter
 from market_calendar import assert_market_open
 import config as cfg
 
-# ── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -35,7 +29,7 @@ logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 
-def _build_cfg() -> dict:
+def _build_cfg():
     return {
         "SR_SWING_WINDOW":      cfg.SR_SWING_WINDOW,
         "SR_ZONE_THRESHOLD":    cfg.SR_ZONE_THRESHOLD,
@@ -48,8 +42,7 @@ def _build_cfg() -> dict:
     }
 
 
-def scan_stock(symbol: str, strategy_cfg: dict) -> dict | None:
-    """Fetch + validate + liquidity check + scan one stock."""
+def scan_stock(symbol, strategy_cfg):
     df = fetch_ohlcv(symbol, cfg.LOOKBACK_DAYS)
     if df is None:
         return None
@@ -57,105 +50,97 @@ def scan_stock(symbol: str, strategy_cfg: dict) -> dict | None:
     if not liq_ok:
         logger.debug(f"{symbol} skipped: {liq_reason}")
         return None
+
     signals       = run_all_strategies(df, strategy_cfg)
     early_signals = run_early_rally_scan(df)
+
+    # Calculate 20-day base low for beginner SL calculation
+    base_low_20 = float(df["Low"].iloc[-21:-1].min()) if len(df) >= 21 else None
+
     if signals or early_signals:
         return {
             "symbol":        symbol,
             "signals":       signals,
             "early_signals": early_signals,
+            "base_low_20":   base_low_20,
         }
     return None
 
 
-def run_scan(send_alert: bool = True, force: bool = False) -> list[dict]:
-    """
-    Full scan pipeline.
-    force=True bypasses the holiday check (for manual testing).
-    """
-    now  = datetime.now(IST)
+def run_scan(send_alert=True, force=False):
+    now      = datetime.now(IST)
     date_str = now.strftime("%d %b %Y")
-
     logger.info(f"══ Swing Scanner starting — {date_str} ══")
 
-    # ── FIX 2: Market holiday / weekend check ─────────────────
     if not force:
         if not assert_market_open():
-            logger.info("Scan aborted — market was not open today.")
+            logger.info("Scan aborted — market not open today.")
             if send_alert:
-                send_scan_results(
-                    cfg.TELEGRAM_BOT_TOKEN,
-                    cfg.TELEGRAM_CHAT_IDS[0] if cfg.TELEGRAM_CHAT_IDS else "",
-                    date_str,
-                    [],
-                    skip_message="🗓 No scan today — NSE holiday or weekend.",
-                )
+                send_all_formats(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, [],
+                                 skip_message="🗓 No scan today — NSE holiday or weekend.")
             return []
 
-    # ── Fetch stock universe ───────────────────────────────────
     symbols = get_universe(cfg.UNIVERSE, getattr(cfg, "CUSTOM_STOCKS", []))
     logger.info(f"Universe: {len(symbols)} stocks")
 
-    # ── Scan in parallel ───────────────────────────────────────
     strategy_cfg = _build_cfg()
-    results      = []
-    completed    = 0
-    failed       = 0
+    results, completed, failed = [], 0, 0
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(scan_stock, sym, strategy_cfg): sym for sym in symbols}
         for future in as_completed(futures):
             completed += 1
             if completed % 50 == 0:
-                logger.info(f"  Scanned {completed}/{len(symbols)} stocks...")
+                logger.info(f"  Scanned {completed}/{len(symbols)}...")
             try:
-                result = future.result()
-                if result:
-                    results.append(result)
+                r = future.result()
+                if r:
+                    results.append(r)
             except Exception as e:
                 failed += 1
                 logger.debug(f"Future error: {e}")
 
-    logger.info(f"Scan complete — {len(results)} signals | {failed} fetch failures | {len(symbols)-completed} skipped")
+    logger.info(f"Scan complete — {len(results)} hits | {failed} failed")
 
-    # ── Console summary ────────────────────────────────────────
-    if results:
+    # Separate regular and early rally
+    early_results   = [
+        {"symbol": r["symbol"], "signals": r["early_signals"]}
+        for r in results if r.get("early_signals")
+    ]
+    regular_results = [
+        {"symbol": r["symbol"], "signals": r["signals"], "base_low_20": r.get("base_low_20")}
+        for r in results if r.get("signals")
+    ]
+
+    if regular_results:
         logger.info("\n📋 SIGNALS:")
-        for r in results:
-            sym    = r["symbol"].replace(".NS", "")
-            strats = list({s["strategy"] for s in r["signals"]})
-            types  = [s.get("type", "") for s in r["signals"]]
+        for r in regular_results:
+            sym   = r["symbol"].replace(".NS", "")
+            types = [s.get("type", "") for s in r["signals"]]
             logger.info(f"  {sym:20s} → {', '.join(types)}")
     else:
         logger.info("No setups found today.")
 
-    # ── Separate early rally from regular results ─────────────
-    early_results   = [
-        {"symbol": r["symbol"], "signals": r.get("early_signals", [])}
-        for r in results if r.get("early_signals")
-    ]
-    regular_results = [
-        {"symbol": r["symbol"], "signals": r.get("signals", [])}
-        for r in results if r.get("signals")
-    ]
-
     if early_results:
-        logger.info(f"Early rally setups: {len(early_results)} stocks")
+        logger.info(f"\n🚀 EARLY RALLY: {len(early_results)} stocks")
         for r in early_results:
-            logger.info(f"  🚀 {r['symbol'].replace('.NS','')} — VCP breakout")
+            logger.info(f"  {r['symbol'].replace('.NS','')}")
 
-    # ── Send Telegram alerts ───────────────────────────────────
     if send_alert:
-        logger.info("Sending regular breakout alert...")
-        send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_IDS, date_str, regular_results)
+        logger.info("Sending alerts...")
+        send_all_formats(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, regular_results)
         if early_results:
-            logger.info("Sending Early Rally alert...")
-            send_early_rally_alerts(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_IDS, date_str, early_results)
+            all_ids = [
+                cfg.TELEGRAM_CHAT_PERSONAL,
+                cfg.TELEGRAM_CHAT_INTERMEDIATE,
+                cfg.TELEGRAM_CHAT_BEGINNER,
+            ]
+            send_early_rally_alerts(cfg.TELEGRAM_BOT_TOKEN, all_ids, date_str, early_results)
 
     return results
 
 
 if __name__ == "__main__":
     no_alert = "--no-alert" in sys.argv
-    force    = "--force"    in sys.argv   # bypass holiday check for testing
+    force    = "--force"    in sys.argv
     run_scan(send_alert=not no_alert, force=force)
