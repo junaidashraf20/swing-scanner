@@ -168,6 +168,7 @@ def detect_52week_breakout(df, timeframe="D"):
         return None
 
     label = "52-Week High Breakout 🏆" if timeframe == "D" else "52-Week High Breakout 🏆⭐"
+    base_low = round(float(df["Low"].iloc[-21:-1].min()), 2)
     return {
         "strategy":    "BREAKOUT",
         "type":        "52_WEEK_HIGH",
@@ -177,6 +178,7 @@ def detect_52week_breakout(df, timeframe="D"):
         "current":     round(today_close, 2),
         "vol_ratio":   vol_ratio,
         "extension":   extension,
+        "base_low":    base_low,
         "weekly_flag": timeframe == "W",
     }
 
@@ -224,6 +226,7 @@ def detect_resistance_breakout(df, timeframe="D",
         return None
 
     tf_label = "Weekly ⭐" if timeframe == "W" else "Daily"
+    base_low = round(float(df["Low"].iloc[-21:-1].min()), 2)
     return {
         "strategy":    "BREAKOUT",
         "type":        "RESISTANCE",
@@ -235,6 +238,7 @@ def detect_resistance_breakout(df, timeframe="D",
         "strength":    best["strength"],
         "vol_ratio":   vol_ratio,
         "extension":   best["extension"],
+        "base_low":    base_low,
         "weekly_flag": timeframe == "W",
     }
 
@@ -274,6 +278,7 @@ def detect_consolidation_breakout(df, timeframe="D",
     # The consolidation itself ensures stock was in a base
 
     tf_label = "Weekly ⭐" if timeframe == "W" else "Daily"
+    base_low = round(float(lo), 2)  # consolidation low IS the base low
     return {
         "strategy":      "BREAKOUT",
         "type":          "CONSOLIDATION",
@@ -284,6 +289,7 @@ def detect_consolidation_breakout(df, timeframe="D",
         "range_pct":     round(rng * 100, 1),
         "range_candles": lb,
         "vol_ratio":     vol_ratio,
+        "base_low":      base_low,
         "weekly_flag":   timeframe == "W",
     }
 
