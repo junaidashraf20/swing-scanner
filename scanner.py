@@ -1,5 +1,5 @@
 """
-scanner.py — Main scan engine with multi-format alerts
+scanner.py — Main scan engine with 3-tier message segregation
 """
 
 import logging
@@ -54,15 +54,11 @@ def scan_stock(symbol, strategy_cfg):
     signals       = run_all_strategies(df, strategy_cfg)
     early_signals = run_early_rally_scan(df)
 
-    # Calculate 20-day base low for beginner SL calculation
-    base_low_20 = float(df["Low"].iloc[-21:-1].min()) if len(df) >= 21 else None
-
     if signals or early_signals:
         return {
             "symbol":        symbol,
             "signals":       signals,
             "early_signals": early_signals,
-            "base_low_20":   base_low_20,
         }
     return None
 
@@ -72,17 +68,26 @@ def run_scan(send_alert=True, force=False):
     date_str = now.strftime("%d %b %Y")
     logger.info(f"══ Swing Scanner starting — {date_str} ══")
 
+    # ── Holiday check ─────────────────────────────────────────
     if not force:
         if not assert_market_open():
             logger.info("Scan aborted — market not open today.")
             if send_alert:
-                send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, [],
-                                 skip_message="🗓 No scan today — NSE holiday or weekend.")
+                # FIX 1: use cfg.TELEGRAM_CHATS not cfg
+                send_scan_results_multi(
+                    cfg.TELEGRAM_BOT_TOKEN,
+                    cfg.TELEGRAM_CHATS,
+                    date_str,
+                    [],
+                    skip_message="🗓 No scan today — NSE holiday or weekend.",
+                )
             return []
 
+    # ── Fetch universe ────────────────────────────────────────
     symbols = get_universe(cfg.UNIVERSE, getattr(cfg, "CUSTOM_STOCKS", []))
     logger.info(f"Universe: {len(symbols)} stocks")
 
+    # ── Scan in parallel ──────────────────────────────────────
     strategy_cfg = _build_cfg()
     results, completed, failed = [], 0, 0
 
@@ -102,16 +107,17 @@ def run_scan(send_alert=True, force=False):
 
     logger.info(f"Scan complete — {len(results)} hits | {failed} failed")
 
-    # Separate regular and early rally
+    # ── Separate regular and early rally ──────────────────────
     early_results   = [
         {"symbol": r["symbol"], "signals": r["early_signals"]}
         for r in results if r.get("early_signals")
     ]
     regular_results = [
-        {"symbol": r["symbol"], "signals": r["signals"], "base_low_20": r.get("base_low_20")}
+        {"symbol": r["symbol"], "signals": r["signals"]}
         for r in results if r.get("signals")
     ]
 
+    # ── Log summary ───────────────────────────────────────────
     if regular_results:
         logger.info("\n📋 SIGNALS:")
         for r in regular_results:
@@ -124,18 +130,28 @@ def run_scan(send_alert=True, force=False):
     if early_results:
         logger.info(f"\n🚀 EARLY RALLY: {len(early_results)} stocks")
         for r in early_results:
-            logger.info(f"  {r['symbol'].replace('.NS','')}")
+            logger.info(f"  {r['symbol'].replace('.NS', '')}")
 
+    # ── Send alerts ───────────────────────────────────────────
     if send_alert:
         logger.info("Sending alerts...")
-        send_scan_results_multi(cfg.TELEGRAM_BOT_TOKEN, cfg, date_str, regular_results)
+
+        # FIX 2: pass cfg.TELEGRAM_CHATS (dict) not cfg (module)
+        send_scan_results_multi(
+            cfg.TELEGRAM_BOT_TOKEN,
+            cfg.TELEGRAM_CHATS,
+            date_str,
+            regular_results,
+        )
+
         if early_results:
-            all_ids = [
-                cfg.TELEGRAM_CHAT_PERSONAL,
-                cfg.TELEGRAM_CHAT_INTERMEDIATE,
-                cfg.TELEGRAM_CHAT_BEGINNER,
-            ]
-            send_early_rally_alerts(cfg.TELEGRAM_BOT_TOKEN, all_ids, date_str, early_results)
+            # FIX 3: pass cfg.TELEGRAM_CHATS (dict) not a list
+            send_early_rally_alerts(
+                cfg.TELEGRAM_BOT_TOKEN,
+                cfg.TELEGRAM_CHATS,
+                date_str,
+                early_results,
+            )
 
     return results
 
