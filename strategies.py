@@ -25,7 +25,7 @@ IST = ZoneInfo("Asia/Kolkata")
 def median_volume(df, period=20):
     return float(df["Volume"].iloc[-(period + 1):-1].median())
 
-def volume_above_median(df, period=20, multiplier=1.5):
+def volume_above_median(df, period=20, multiplier=1.2):
     med = median_volume(df, period)
     today_vol = float(df["Volume"].iloc[-1])
     if med <= 0:
@@ -63,7 +63,7 @@ def is_weekly_close_day() -> bool:
 
 def is_fresh_breakout(df, breakout_level: float,
                        lookback: int = 20,
-                       max_extension: float = 0.20) -> tuple[bool, float]:
+                       max_extension: float = 0.25) -> tuple[bool, float]:
     """
     Checks if the stock is breaking out from a FRESH BASE
     and has NOT already run up too much.
@@ -157,7 +157,7 @@ def detect_52week_breakout(df, timeframe="D"):
     if not is_bullish_close(today):
         return None
 
-    vol_ok, vol_ratio = volume_above_median(df, multiplier=1.5)
+    vol_ok, vol_ratio = volume_above_median(df, multiplier=1.2)
     if not vol_ok:
         return None
 
@@ -199,7 +199,7 @@ def detect_resistance_breakout(df, timeframe="D",
     if not is_bullish_close(today):
         return None
 
-    vol_ok, vol_ratio = volume_above_median(df, multiplier=1.5)
+    vol_ok, vol_ratio = volume_above_median(df, multiplier=1.2)
     if not vol_ok:
         return None
 
@@ -270,7 +270,7 @@ def detect_consolidation_breakout(df, timeframe="D",
     if not is_bullish_close(today):
         return None
 
-    vol_ok, vol_ratio = volume_above_median(df, multiplier=1.5)
+    vol_ok, vol_ratio = volume_above_median(df, multiplier=1.2)
     if not vol_ok:
         return None
 
@@ -306,7 +306,7 @@ def run_all_strategies(df, cfg):
     mt = cfg.get("SR_MIN_TOUCHES", 2)
     zt = cfg.get("SR_ZONE_THRESHOLD", 0.025)
     lb = cfg.get("BREAKOUT_LOOKBACK", 30)
-    mr = cfg.get("BREAKOUT_MAX_RANGE", 0.10)
+    mr = cfg.get("BREAKOUT_MAX_RANGE", 0.15)
 
     signals = []
 
