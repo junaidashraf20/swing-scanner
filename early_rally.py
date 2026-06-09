@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def is_weekly_close_day() -> bool:
 #  CORE DETECTION
 # ════════════════════════════════════════════════════════════════
 
-def detect_vcp_breakout(df: pd.DataFrame, timeframe: str = "D") -> dict | None:
+def detect_vcp_breakout(df: pd.DataFrame, timeframe: str = "D") -> Optional[dict]:
     """
     Detects VCP (Volatility Contraction Pattern) breakout.
 

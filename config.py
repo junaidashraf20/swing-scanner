@@ -37,5 +37,11 @@ BREAKOUT_LOOKBACK    = 30
 BREAKOUT_MAX_RANGE   = 0.15
 BREAKOUT_VOLUME_MULT = 1.2
 
+# --- Order Block Strategy Parameters ---
+ORDER_BLOCK_IMPULSE_LOOKBACK    = 30   # How many bars back to scan for bullish impulse
+ORDER_BLOCK_CONSOLIDATION_MIN   = 3    # Minimum bars in consolidation zone
+ORDER_BLOCK_CONSOLIDATION_MAX   = 10   # Maximum bars in consolidation zone
+ORDER_BLOCK_VOLUME_MULT         = 1.2  # Volume multiplier for breakout confirmation
+
 # --- Data ---
 LOOKBACK_DAYS = 365

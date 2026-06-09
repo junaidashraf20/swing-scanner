@@ -17,6 +17,7 @@ import numpy as np
 import logging
 import time
 from datetime import datetime, timedelta
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def validate_ohlcv(df: pd.DataFrame, symbol: str = "") -> tuple[bool, str]:
 #  PRIMARY: YFINANCE  (using Ticker.history — more stable)
 # ════════════════════════════════════════════════════════════════
 
-def fetch_yfinance(symbol: str, days: int = 365) -> pd.DataFrame | None:
+def fetch_yfinance(symbol: str, days: int = 365) -> Optional[pd.DataFrame]:
     """
     Fetch using yf.Ticker().history() — avoids InterfaceError
     that occurs with yf.download() in newer yfinance versions.
@@ -119,7 +120,7 @@ def fetch_yfinance(symbol: str, days: int = 365) -> pd.DataFrame | None:
 #  FALLBACK: JUGAAD_DATA (direct NSE)
 # ════════════════════════════════════════════════════════════════
 
-def fetch_jugaad(symbol: str, days: int = 365) -> pd.DataFrame | None:
+def fetch_jugaad(symbol: str, days: int = 365) -> Optional[pd.DataFrame]:
     """
     Fallback: fetch from NSE directly via jugaad_data.
     """
@@ -170,7 +171,7 @@ def fetch_jugaad(symbol: str, days: int = 365) -> pd.DataFrame | None:
 #  MAIN FETCH — auto fallback + validation
 # ════════════════════════════════════════════════════════════════
 
-def fetch_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame | None:
+def fetch_ohlcv(symbol: str, days: int = 365) -> Optional[pd.DataFrame]:
     """
     Fetch OHLCV with automatic fallback and validation.
     1. Try yfinance Ticker().history()

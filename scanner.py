@@ -31,14 +31,18 @@ IST = ZoneInfo("Asia/Kolkata")
 
 def _build_cfg():
     return {
-        "SR_SWING_WINDOW":      cfg.SR_SWING_WINDOW,
-        "SR_ZONE_THRESHOLD":    cfg.SR_ZONE_THRESHOLD,
-        "SR_MIN_TOUCHES":       cfg.SR_MIN_TOUCHES,
-        "SR_PROXIMITY":         cfg.SR_PROXIMITY,
-        "SMC_SWING_WINDOW":     cfg.SMC_SWING_WINDOW,
-        "BREAKOUT_LOOKBACK":    cfg.BREAKOUT_LOOKBACK,
-        "BREAKOUT_MAX_RANGE":   cfg.BREAKOUT_MAX_RANGE,
-        "BREAKOUT_VOLUME_MULT": cfg.BREAKOUT_VOLUME_MULT,
+        "SR_SWING_WINDOW":              cfg.SR_SWING_WINDOW,
+        "SR_ZONE_THRESHOLD":            cfg.SR_ZONE_THRESHOLD,
+        "SR_MIN_TOUCHES":               cfg.SR_MIN_TOUCHES,
+        "SR_PROXIMITY":                 cfg.SR_PROXIMITY,
+        "SMC_SWING_WINDOW":             cfg.SMC_SWING_WINDOW,
+        "BREAKOUT_LOOKBACK":            cfg.BREAKOUT_LOOKBACK,
+        "BREAKOUT_MAX_RANGE":           cfg.BREAKOUT_MAX_RANGE,
+        "BREAKOUT_VOLUME_MULT":         cfg.BREAKOUT_VOLUME_MULT,
+        "ORDER_BLOCK_IMPULSE_LOOKBACK": cfg.ORDER_BLOCK_IMPULSE_LOOKBACK,
+        "ORDER_BLOCK_CONSOLIDATION_MIN": cfg.ORDER_BLOCK_CONSOLIDATION_MIN,
+        "ORDER_BLOCK_CONSOLIDATION_MAX": cfg.ORDER_BLOCK_CONSOLIDATION_MAX,
+        "ORDER_BLOCK_VOLUME_MULT":      cfg.ORDER_BLOCK_VOLUME_MULT,
     }
 
 

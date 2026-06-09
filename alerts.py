@@ -110,6 +110,11 @@ def format_signal_personal(sig):
             f"  📦 *Consolidation Breakout* [{tf_tag}]\n"
             f"     Broke ₹{broke} ({bars}d base, {rng}% tight) → Now ₹{curr} | Vol {vol}x{ext_str}"
         )
+    elif stype == "ORDER_BLOCK":
+        return (
+            f"  📦⬆️ *Bullish Order Block Breakout* [{tf_tag}]\n"
+            f"     Broke ₹{broke} → Now ₹{curr} | Vol {vol}x{ext_str}"
+        )
     return f"  💥 Breakout ₹{broke} → ₹{curr} | Vol {vol}x [{tf_tag}]"
 
 
@@ -137,6 +142,8 @@ def format_signal_intermediate(sig):
         rng  = sig.get("range_pct")
         bars = sig.get("range_candles")
         line = f"  📦 *Consolidation Breakout* [{tf_tag}]\n     Tight {rng}% base broke ₹{broke} | Now ₹{curr}\n     Volume: {vol_label} ({vol}x)"
+    elif stype == "ORDER_BLOCK":
+        line = f"  📦⬆️ *Bullish Order Block* [{tf_tag}]\n     Breakout ₹{broke} | Now ₹{curr}\n     Volume: {vol_label} ({vol}x)"
     else:
         line = f"  💥 Breakout ₹{broke} → ₹{curr} | Vol {vol}x [{tf_tag}]"
 
@@ -168,6 +175,8 @@ def format_signal_beginner(sig):
         type_label = "Key Resistance Break"
     elif stype == "CONSOLIDATION":
         type_label = "Range Breakout"
+    elif stype == "ORDER_BLOCK":
+        type_label = "Block Breakout"
     else:
         type_label = "Breakout"
 

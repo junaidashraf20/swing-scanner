@@ -295,6 +295,131 @@ def detect_consolidation_breakout(df, timeframe="D",
 
 
 # ════════════════════════════════════════════════════════════════
+#  BULLISH ORDER BLOCK — IMPULSE + CONSOLIDATION PATTERN
+# ════════════════════════════════════════════════════════════════
+
+def identify_bullish_order_block(df, lookback=30, consol_min=3, consol_max=10):
+    """
+    Identifies a bullish order block zone by finding:
+    1. A recent bullish impulse (rising closes/opens)
+    2. The peak high of that impulse
+    3. The consolidation/pullback zone below the peak (order block zone)
+    
+    Returns: (block_high, block_low, is_valid)
+    """
+    if len(df) < lookback + 1:
+        return None, None, False
+
+    # Look back to find a bullish impulse (majority closes > opens in recent window)
+    recent = df.iloc[-(lookback + 1):-1]
+    bullish_count = sum(1 for _, candle in recent.iterrows()
+                        if float(candle["Close"]) > float(candle["Open"]))
+    
+    if bullish_count < lookback * 0.5:  # At least 50% bullish candles
+        return None, None, False
+
+    # Find the peak high in the recent window
+    peak_high = float(recent["High"].max())
+    peak_idx = recent["High"].idxmax()
+
+    # Look for consolidation zone after the peak (pullback/order block)
+    # Consolidation is lower highs and lows below the peak
+    after_peak = df.loc[peak_idx:]
+    
+    if len(after_peak) < consol_min + 1:
+        return None, None, False
+
+    # Extract consolidation bars (those with lows below peak)
+    consol_bars = []
+    for idx, candle in after_peak.iloc[1:].iterrows():
+        high = float(candle["High"])
+        if high < peak_high:
+            consol_bars.append(candle)
+        if len(consol_bars) >= consol_max:
+            break
+
+    # Valid order block must have min consolidation bars
+    if len(consol_bars) < consol_min:
+        return None, None, False
+
+    # Order block zone: highest high of consolidation bars (this is where we bought)
+    # and the lowest low of consolidation (our stop loss area)
+    consol_df = pd.DataFrame(consol_bars)
+    block_high = float(consol_df["High"].max())
+    block_low = float(consol_df["Low"].min())
+
+    # Block high should be reasonably below peak (consolidation, not another impulse)
+    if block_high >= peak_high * 0.95:
+        return None, None, False
+
+    return block_high, block_low, True
+
+
+def detect_order_block_breakout(df, timeframe="D", cfg=None):
+    """
+    Detects bullish order block breakout:
+    - Previous close <= block_high
+    - Today close > block_high
+    - Bullish close
+    - Above-median volume
+    
+    Returns signal dict or None.
+    """
+    if cfg is None:
+        cfg = {}
+
+    impulse_lb = cfg.get("ORDER_BLOCK_IMPULSE_LOOKBACK", 30)
+    consol_min = cfg.get("ORDER_BLOCK_CONSOLIDATION_MIN", 3)
+    consol_max = cfg.get("ORDER_BLOCK_CONSOLIDATION_MAX", 10)
+    vol_mult = cfg.get("ORDER_BLOCK_VOLUME_MULT", 1.2)
+
+    if len(df) < impulse_lb + 5:
+        return None
+
+    # Identify the order block zone
+    block_high, block_low, is_valid = identify_bullish_order_block(
+        df, impulse_lb, consol_min, consol_max
+    )
+    if not is_valid or block_high is None:
+        return None
+
+    today = df.iloc[-1]
+    today_close = float(today["Close"])
+    prev_close = float(df["Close"].iloc[-2])
+
+    # Breakout condition: today closes above block_high, yesterday was below/equal
+    if not (prev_close <= block_high < today_close):
+        return None
+
+    # Must be bullish close
+    if not is_bullish_close(today):
+        return None
+
+    # Volume confirmation
+    vol_ok, vol_ratio = volume_above_median(df, multiplier=vol_mult)
+    if not vol_ok:
+        return None
+
+    # Base low for SL calculation
+    base_low = round(block_low, 2)
+
+    tf_label = "Weekly ⭐" if timeframe == "W" else "Daily"
+    return {
+        "strategy":    "BREAKOUT",
+        "type":        "ORDER_BLOCK",
+        "timeframe":   timeframe,
+        "label":       f"Bullish Order Block Breakout ({tf_label}) 📦⬆️",
+        "broke_above": round(block_high, 2),
+        "current":     round(today_close, 2),
+        "vol_ratio":   vol_ratio,
+        "base_low":    base_low,
+        "weekly_flag": timeframe == "W",
+        "block_high":  round(block_high, 2),
+        "block_low":   round(block_low, 2),
+    }
+
+
+# ════════════════════════════════════════════════════════════════
 #  UNIFIED RUNNER
 # ════════════════════════════════════════════════════════════════
 
@@ -329,6 +454,12 @@ def run_all_strategies(df, cfg):
     except Exception as e:
         logger.debug(f"Consolidation daily: {e}")
 
+    try:
+        s = detect_order_block_breakout(df, "D", cfg)
+        if s: signals.append(s)
+    except Exception as e:
+        logger.debug(f"Order block daily: {e}")
+
     # ── WEEKLY — only on Friday ───────────────────────────────
     if len(df) >= 60 and is_weekly_close_day():
         try:
@@ -349,6 +480,11 @@ def run_all_strategies(df, cfg):
                     if s: signals.append(s)
                 except Exception as e:
                     logger.debug(f"Consolidation weekly: {e}")
+                try:
+                    s = detect_order_block_breakout(wdf, "W", cfg)
+                    if s: signals.append(s)
+                except Exception as e:
+                    logger.debug(f"Order block weekly: {e}")
         except Exception as e:
             logger.debug(f"Weekly resample: {e}")
 
